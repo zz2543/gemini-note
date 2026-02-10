@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Gemini 智能高亮笔记助手 (V17-多对话记忆版)
+// @name         Gemini 智能高亮笔记助手 
 // @namespace    http://tampermonkey.net/
 // @version      1.17
-// @description  张祖豪专用：支持笔记跟随对话ID自动切换、自动保存、侧边栏管理
+// @description  支持笔记跟随对话ID自动切换、自动保存、侧边栏管理
 // @author       Zhang Zuhao
 // @match        https://gemini.google.com/*
 // @connect      api.openai.com
@@ -17,7 +17,7 @@
 (function() {
     'use strict';
 
-    console.log(">>> V17 多对话记忆版已启动");
+    console.log(">>> gemini-note已启动");
 
     // --- 全局变量 ---
     let notesData = [];
