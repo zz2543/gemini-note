@@ -1,2 +1,65 @@
-# gemini-note
+# Gemini 智能高亮笔记助手 (Gemini Smart Note Assistant)
+
+
 一个基于 Tampermonkey (油猴) 的浏览器用户脚本，专为 Google Gemini 网页端设计。它允许用户高亮选中文本、自动捕获章节上下文，并利用 AI (如 DeepSeek/OpenAI) 生成结构化的复习笔记。
+
+> **核心理念**：碎片化摘录 + 章节级上下文 + AI 智能重组 = 高效知识内化
+
+## ✨ 主要功能
+
+* **🖊️ 便捷划词高亮**：选中 Gemini 回复中的任意文本，自动弹出高亮按钮，点击即可标记。
+* **🧠 智能上下文捕获**：不仅记录你选中的句子，脚本还会自动向上查找最近的标题（H1-H6），抓取**整个章节**的内容作为背景知识，确保 AI 总结时不会断章取义。
+* **🗄️ 侧边栏笔记面板**：右侧固定的抽屉式面板，集中管理你的摘录，界面清爽，不遮挡正文。
+* **🤖 AI 智能总结**：一键调用大模型 API（支持 DeepSeek、OpenAI 等），将碎片化的摘录结合上下文，重组成一篇结构清晰的 Markdown 笔记。
+* **🎨 Markdown 渲染**：内置轻量级渲染器，支持二级标题（##）、粗体（**）和列表的完美展示。
+* **📋 双重复制模式**：
+    * **复制原文**：仅复制你手动高亮的金句。
+    * **复制 AI**：复制 AI 整理好的完整 Markdown 笔记。
+* **⚙️ 自定义 API**：支持配置任意兼容 OpenAI 格式的接口（Endpoint, Key, Model）。
+
+## 🚀 安装指南
+
+1.  **安装浏览器扩展**：
+    确保你的浏览器（Chrome, Edge, Firefox 等）已安装 [Tampermonkey](https://www.tampermonkey.net/) 插件。
+
+2.  **安装脚本**：
+    * 点击 Tampermonkey 图标 -> "添加新脚本"。
+    * 将本项目中的 `gemini_note_assistant.js` (或者你保存的文件名) 代码完整复制粘贴进去。
+    * 点击 "文件" -> "保存"。
+
+3.  **刷新页面**：
+    打开 [Google Gemini](https://gemini.google.com/)，刷新页面即可生效。
+
+## 📖 使用教程
+
+### 1. 配置 API (首次使用)
+为了使用 AI 总结功能，你需要配置 API Key（推荐使用 DeepSeek，便宜且强大）：
+1.  点击页面右下角的 **📝 悬浮球** 打开侧边栏。
+2.  点击侧边栏底部的 **⚙️ 按钮**。
+3.  填入配置信息：
+    * **API Endpoint**: `https://api.deepseek.com/chat/completions` (举例)
+    * **API Key**: `sk-xxxxxxxxxxxxxxxx`
+    * **Model Name**: `deepseek-chat`
+4.  点击保存。
+
+### 2. 日常使用
+1.  **摘录**：在 Gemini 的回复中选中一段文字，点击浮现的 **"🖊️ 摘录"** 按钮。
+2.  **查看**：点击右下角 **📝** 图标展开侧边栏，查看已收集的重点。
+3.  **生成**：收集完毕后，点击侧边栏的 **"✨ AI 智能总结"**。
+4.  **导出**：点击 **"复制 AI"** 将整理好的笔记粘贴到 Notion、Obsidian 或其他笔记软件中。
+
+## 🛠️ 技术细节
+
+* **纯 DOM 操作**：为了通过 Google 严格的 CSP (Content Security Policy) 和 TrustedHTML 限制，本项目完全放弃 `innerHTML`，采用纯 `document.createElement` 构建 UI，安全且稳定。
+* **GM_xmlhttpRequest**：使用油猴特权 API 进行跨域请求，直接在前端调用 AI 接口。
+* **LocalStorage**：配置信息保存在本地，不会上传到任何第三方服务器。
+
+## ⚠️ 免责声明
+
+* 本项目为个人学习与辅助工具，非 Google 官方产品。
+* 用户的 API Key 仅保存在用户本地浏览器中，脚本不会收集任何用户隐私数据。
+* 请遵守 Google Gemini 的使用条款。
+
+## 📄 License
+
+MIT License
