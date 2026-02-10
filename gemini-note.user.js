@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Gemini 智能高亮笔记助手
+// @name         Gemini 智能高亮笔记助手 (V17-多对话记忆版)
 // @namespace    http://tampermonkey.net/
-// @version      1.16
-// @description  基于V14架构，移除上下文预览文字，侧边栏固定，保留所有AI功能
+// @version      1.17
+// @description  张祖豪专用：支持笔记跟随对话ID自动切换、自动保存、侧边栏管理
 // @author       Zhang Zuhao
 // @match        https://gemini.google.com/*
 // @connect      api.openai.com
@@ -11,89 +11,53 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_deleteValue
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    console.log(">>> V16 精简回归版已启动");
+    console.log(">>> V17 多对话记忆版已启动");
 
     // --- 全局变量 ---
     let notesData = [];
     let savedRange = null;
     let currentAIMarkdown = "";
+    let currentChatId = ""; // 当前对话的唯一标识
 
-    // --- 1. 样式注入 ---
+    // --- 1. 样式注入 (保持 V16 样式不变) ---
     const style = document.createElement('style');
     style.textContent = `
         /* 基础组件 */
         .z-highlight { background-color: #ffeb3b; color: #000; font-weight: bold; border-bottom: 2px solid #fbc02d; cursor: pointer; }
-
-        /* 摘录悬浮钮 */
         #z-action-btn { position: fixed; z-index: 99999; padding: 8px 16px; background: #202124; color: #fff; border-radius: 24px; cursor: pointer; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: none; user-select: none; font-family: sans-serif; }
 
-        /* 右下角图标 (固定位置，不可拖拽) */
+        /* 悬浮球 */
         #z-dock-icon { position: fixed; bottom: 30px; right: 30px; width: 50px; height: 50px; background: #fff; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 99998; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 24px; transition: transform 0.2s; user-select: none; }
         #z-dock-icon:hover { transform: scale(1.1); }
 
-        /* --- 侧边栏核心样式 --- */
+        /* 侧边栏 */
         #z-notes-panel {
-            position: fixed;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            width: 400px;
-            height: 100vh;
-            background: #fff;
-            border-left: 1px solid #dadce0;
-            box-shadow: -4px 0 16px rgba(0,0,0,0.1);
-            z-index: 99999;
-            padding: 20px;
-            display: none;
-            font-family: 'Google Sans', sans-serif;
-            flex-direction: column;
-            box-sizing: border-box;
+            position: fixed; top: 0; right: 0; bottom: 0; width: 400px; height: 100vh;
+            background: #fff; border-left: 1px solid #dadce0; box-shadow: -4px 0 16px rgba(0,0,0,0.1);
+            z-index: 99999; padding: 20px; display: none; font-family: 'Google Sans', sans-serif;
+            flex-direction: column; box-sizing: border-box;
         }
 
         /* 列表区域 */
-        #z-notes-list {
-            flex: 1;
-            overflow-y: auto;
-            margin-bottom: 15px;
-            font-size: 14px;
-            color: #333;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 10px;
-            min-height: 100px;
-        }
+        #z-notes-list { flex: 1; overflow-y: auto; margin-bottom: 15px; font-size: 14px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px; min-height: 100px; }
 
-        /* AI 渲染区域 */
-        #z-ai-result {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            font-size: 14px;
-            color: #37474f;
-            margin-bottom: 15px;
-            display: none;
-            line-height: 1.6;
-            border: 1px solid #e0e0e0;
-            overflow-y: auto;
-            max-height: 40%;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
-        }
-
-        /* Markdown 渲染样式 */
+        /* AI 结果区 */
+        #z-ai-result { background: #f8f9fa; padding: 15px; border-radius: 8px; font-size: 14px; color: #37474f; margin-bottom: 15px; display: none; line-height: 1.6; border: 1px solid #e0e0e0; overflow-y: auto; max-height: 40%; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); }
         #z-ai-result h2 { margin: 16px 0 8px 0; font-size: 16px; color: #202124; font-weight: 700; border-left: 4px solid #1a73e8; padding-left: 8px; line-height: 1.3; }
         #z-ai-result h3 { margin: 12px 0 6px 0; font-size: 15px; color: #4285f4; font-weight: 600; }
         #z-ai-result ul { padding-left: 20px; margin: 6px 0; }
         #z-ai-result li { margin-bottom: 6px; }
         #z-ai-result strong { color: #000; font-weight: 700; background: rgba(255, 235, 59, 0.3); padding: 0 2px; border-radius: 2px;}
 
-        /* 列表项 (已移除 ctx 样式) */
+        /* 列表项 */
         .z-note-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px dashed #eee; padding-bottom: 8px; }
         .z-note-left { flex: 1; margin-right: 10px; font-size: 14px; line-height: 1.5; color: #202124;}
-        /* 删除按钮 */
         .z-del-btn { color: #ea4335; cursor: pointer; font-weight: bold; padding: 6px; font-size: 18px; line-height: 1; border-radius: 4px; }
         .z-del-btn:hover { background: #fce8e6; }
 
@@ -108,7 +72,6 @@
         .z-btn-setting { background: #fff; border: 1px solid #dadce0; color: #5f6368; flex: 0 0 auto; width: 40px; }
         .z-btn-setting:hover { background: #f8f9fa; }
 
-        /* 设置模态框 */
         #z-settings-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 24px; box-shadow: 0 24px 48px rgba(0,0,0,0.2); z-index: 100000; border-radius: 12px; width: 320px; display: none; font-family: sans-serif; }
         .z-input { width: 100%; padding: 10px; margin: 8px 0 20px 0; border: 1px solid #dadce0; border-radius: 6px; box-sizing: border-box; display: block; font-size: 14px; }
         .z-label { font-size: 13px; font-weight: bold; color: #202124; display: block; margin-bottom: 4px; }
@@ -119,64 +82,93 @@
     const actionBtn = document.createElement('div'); actionBtn.id = 'z-action-btn'; actionBtn.textContent = '🖊️ 摘录'; document.body.appendChild(actionBtn);
     const dockIcon = document.createElement('div'); dockIcon.id = 'z-dock-icon'; dockIcon.textContent = '📝'; document.body.appendChild(dockIcon);
 
-    // 侧边栏容器
     const notesPanel = document.createElement('div'); notesPanel.id = 'z-notes-panel';
-
-    // 顶部标题栏
     const headerDiv = document.createElement('div');
-    headerDiv.style.marginBottom = '20px';
-    headerDiv.style.display = 'flex';
-    headerDiv.style.justifyContent = 'space-between';
-    headerDiv.style.alignItems = 'center';
-
-    const h3 = document.createElement('h3');
-    h3.textContent = '📚 重点笔记';
-    h3.style.margin = '0';
-    h3.style.fontSize = '20px';
-    h3.style.color = '#202124';
-
-    const topCloseBtn = document.createElement('span');
-    topCloseBtn.textContent = '✕';
-    topCloseBtn.style.cursor = 'pointer';
-    topCloseBtn.style.padding = '8px';
-    topCloseBtn.style.fontSize = '18px';
-    topCloseBtn.style.color = '#5f6368';
-    topCloseBtn.onclick = () => notesPanel.style.display = 'none';
-
-    headerDiv.appendChild(h3);
-    headerDiv.appendChild(topCloseBtn);
-    notesPanel.appendChild(headerDiv);
+    headerDiv.style.marginBottom = '20px'; headerDiv.style.display = 'flex'; headerDiv.style.justifyContent = 'space-between'; headerDiv.style.alignItems = 'center';
+    const h3 = document.createElement('h3'); h3.textContent = '📚 重点笔记'; h3.style.margin = '0'; h3.style.fontSize = '20px'; h3.style.color = '#202124';
+    const topCloseBtn = document.createElement('span'); topCloseBtn.textContent = '✕'; topCloseBtn.style.cursor = 'pointer'; topCloseBtn.style.padding = '8px'; topCloseBtn.style.fontSize = '18px'; topCloseBtn.style.color = '#5f6368'; topCloseBtn.onclick = () => notesPanel.style.display = 'none';
+    headerDiv.appendChild(h3); headerDiv.appendChild(topCloseBtn); notesPanel.appendChild(headerDiv);
 
     const notesList = document.createElement('div'); notesList.id = 'z-notes-list'; notesPanel.appendChild(notesList);
     const aiResult = document.createElement('div'); aiResult.id = 'z-ai-result'; notesPanel.appendChild(aiResult);
 
-    // 底部按钮区
     const btnRow = document.createElement('div'); btnRow.className = 'z-btn-row';
     const createBtn = (cls, txt, id, title) => { const b = document.createElement('button'); b.className = 'z-btn '+cls; b.textContent = txt; b.id = id; if(title) b.title = title; return b; };
-
     const btnAi = createBtn('z-btn-ai', '✨ AI 智能总结', 'z-btn-ai');
     const btnCopyAi = createBtn('z-btn-primary', '复制 AI', 'z-btn-copy-ai', '复制 AI 生成的总结');
     const btnCopyRaw = createBtn('z-btn-primary', '复制原文', 'z-btn-copy-raw', '复制所有高亮的原始文字');
     const btnSet = createBtn('z-btn-setting', '⚙️', 'z-btn-setting', 'API 设置');
-
     btnRow.append(btnAi, btnCopyAi, btnCopyRaw, btnSet);
     notesPanel.appendChild(btnRow); document.body.appendChild(notesPanel);
 
-    // 设置弹窗
     const modal = document.createElement('div'); modal.id = 'z-settings-modal';
     const mTitle = document.createElement('h4'); mTitle.textContent = 'API 配置'; mTitle.style.marginTop = '0'; modal.appendChild(mTitle);
-
     const createInput = (id, ph, lbl) => { const l = document.createElement('span'); l.className = 'z-label'; l.textContent = lbl; modal.appendChild(l); const i = document.createElement('input'); i.type = id.includes('key') ? 'password' : 'text'; i.id = id; i.className = 'z-input'; i.placeholder = ph; modal.appendChild(i); };
     createInput('z-api-url', 'https://api.deepseek.com/chat/completions', 'API Endpoint');
     createInput('z-api-key', 'sk-...', 'API Key');
     createInput('z-model-name', 'deepseek-chat', 'Model Name');
-
     const mBtns = document.createElement('div'); mBtns.style.textAlign = 'right';
     const saveBtn = createBtn('z-btn-primary', '保存', 'z-save-settings'); saveBtn.style.marginRight = '8px'; saveBtn.style.width = 'auto';
     const cancelBtn = createBtn('z-btn-close', '取消', 'z-close-settings'); cancelBtn.style.width = 'auto';
     mBtns.append(saveBtn, cancelBtn); modal.appendChild(mBtns); document.body.appendChild(modal);
 
-    // --- 3. 核心功能 ---
+    // --- 3. 核心功能: 存储与加载 (V17核心) ---
+
+    // 获取当前 URL 对应的 Chat ID (简单使用 pathname)
+    function getChatId() {
+        return window.location.pathname;
+    }
+
+    // 保存当前对话的笔记到油猴存储
+    function saveNotesToStorage() {
+        if (!currentChatId) return;
+        const key = 'gemini_notes_' + currentChatId;
+        GM_setValue(key, JSON.stringify(notesData));
+        // console.log("笔记已保存:", key, notesData.length);
+    }
+
+    // 从存储加载笔记
+    function loadNotesFromStorage() {
+        const newId = getChatId();
+
+        // 如果 ID 没变，无需重载 (避免频繁闪烁)
+        if (newId === currentChatId) return;
+
+        currentChatId = newId;
+        const key = 'gemini_notes_' + currentChatId;
+        const saved = GM_getValue(key, null);
+
+        if (saved) {
+            try {
+                notesData = JSON.parse(saved);
+            } catch(e) {
+                console.error("解析存档失败", e);
+                notesData = [];
+            }
+        } else {
+            notesData = [];
+        }
+
+        // 清空 AI 结果区 (换对话了，旧总结也不要了)
+        document.getElementById('z-ai-result').style.display = 'none';
+        currentAIMarkdown = "";
+
+        renderList();
+        // console.log("已切换到对话:", currentChatId, "加载笔记:", notesData.length);
+    }
+
+    // --- 4. 监听 URL 变化 (SPA 路由监听) ---
+    let lastUrl = window.location.href;
+    setInterval(() => {
+        if (window.location.href !== lastUrl) {
+            lastUrl = window.location.href;
+            loadNotesFromStorage(); // URL 变了，加载新笔记
+        }
+    }, 1000); // 每秒检查一次
+
+
+    // --- 5. 业务逻辑 ---
+
     function getSectionContext(range) {
         let node = range.commonAncestorContainer;
         if (node.nodeType === 3) node = node.parentNode;
@@ -201,28 +193,21 @@
         return contextBuffer.join('\n\n');
     }
 
-    // Markdown 渲染器
     function safeRenderMarkdown(container, text) {
         container.textContent = '';
         if (!text) return;
         const lines = text.split('\n');
         let currentList = null;
-
         lines.forEach(line => {
-            line = line.trim();
-            if (line === '') return;
-
+            line = line.trim(); if (line === '') return;
             if (line.startsWith('- ') || line.startsWith('* ')) {
                 if (!currentList) { currentList = document.createElement('ul'); container.appendChild(currentList); }
                 const li = document.createElement('li'); parseInlineStyle(li, line.substring(2)); currentList.appendChild(li);
-            }
-            else if (line.startsWith('## ')) {
+            } else if (line.startsWith('## ')) {
                 currentList = null; const h2 = document.createElement('h2'); parseInlineStyle(h2, line.substring(3)); container.appendChild(h2);
-            }
-            else if (line.startsWith('### ')) {
+            } else if (line.startsWith('### ')) {
                 currentList = null; const h3 = document.createElement('h3'); parseInlineStyle(h3, line.substring(4)); container.appendChild(h3);
-            }
-            else {
+            } else {
                 currentList = null; const p = document.createElement('div'); p.style.marginBottom = '6px'; parseInlineStyle(p, line); container.appendChild(p);
             }
         });
@@ -236,7 +221,6 @@
         });
     }
 
-    // --- 4. 业务逻辑 (精简版：移除 ctxDiv) ---
     function renderList() {
         notesList.textContent = '';
         if (notesData.length === 0) {
@@ -250,7 +234,7 @@
 
             const leftDiv = document.createElement('div'); leftDiv.className = 'z-note-left';
 
-            // 仅添加高亮文字，不再添加上下文预览 div
+            // 纯净显示，不显示 ctx div
             const hlDiv = document.createElement('div');
             const b = document.createElement('b');
             b.textContent = item.highlight;
@@ -266,13 +250,16 @@
     function deleteNote(id) {
         const index = notesData.findIndex(n => n.id === id);
         if (index > -1) {
+            // DOM 移除高亮 (如果当前页面有这个元素)
             const item = notesData[index];
             if (item.spanElement && document.body.contains(item.spanElement)) {
                 const parent = item.spanElement.parentNode;
                 while (item.spanElement.firstChild) parent.insertBefore(item.spanElement.firstChild, item.spanElement);
                 parent.removeChild(item.spanElement);
             }
-            notesData.splice(index, 1); renderList();
+            notesData.splice(index, 1);
+            saveNotesToStorage(); // 保存更改
+            renderList();
         }
     }
 
@@ -302,12 +289,13 @@
             let contextText = getSectionContext(savedRange);
             const span = document.createElement('span'); span.className = 'z-highlight'; span.textContent = savedRange.toString();
             savedRange.deleteContents(); savedRange.insertNode(span);
+
             notesData.push({ id: Date.now(), highlight: span.textContent, context: contextText, spanElement: span });
+            saveNotesToStorage(); // 保存
+
             renderList(); actionBtn.style.display = 'none'; window.getSelection().removeAllRanges();
 
-            if(notesPanel.style.display === 'none') {
-                notesPanel.style.display = 'flex';
-            }
+            if(notesPanel.style.display === 'none') { notesPanel.style.display = 'flex'; }
 
         } catch (err) { console.error(err); }
     });
@@ -377,4 +365,8 @@
             onerror: () => { btnAi.textContent = '重试'; btnAi.disabled = false; aiResult.textContent = "网络错误"; }
         });
     };
+
+    // 初始化：页面加载时尝试读取一次笔记
+    setTimeout(loadNotesFromStorage, 1000);
+
 })();
